@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -21,14 +22,23 @@ import org.springframework.stereotype.Service;
 @Service
 public class ExcelAggregationService {
 
-    private static final int ROW_START = 1;
     private static final int PRICE_CELL = 4;
+    private static final int DESC_CELL = 11;
 
-    private static final Map<String, Set<String>> CATEGORIES = Map.of(
-            "Продукты", Set.of("Перекрёсток доставка", "Dostavka Perekrestka_Sdk", "Перекрёсток", "Продуктовый магазин",
-                    "Дикси", "Микс фрукт", "Самокат", "КуулКлевер", "Пятёрочка доставка", "Пятерочка", "ВкусВилл"),
-            "Бензин", Set.of("Лукойл")
-    );
+    private final static Map<String, String> CATEGORIES = new HashMap<>() {{
+        put("перекрёсток доставка", "продукты");
+        put("dostavka perekrestka_sdk", "продукты");
+        put("перекрёсток", "продукты");
+        put("продуктовый магазин", "продукты");
+        put("дикси", "продукты");
+        put("микс фрукт", "продукты");
+        put("самокат", "продукты");
+        put("куулклевер", "продукты");
+        put("пятёрочка доставка", "продукты");
+        put("пятёрочка", "продукты");
+        put("вкусвилл", "продукты");
+        put("лукойл", "бензин");
+    }};
 
     public byte[] aggregateByCategory(InputStream inputStream) {
         Map<String, BigDecimal> totals = new LinkedHashMap<>();
@@ -36,11 +46,14 @@ public class ExcelAggregationService {
         try (Workbook workbook = WorkbookFactory.create(inputStream)) {
             Sheet sheet = workbook.getSheetAt(0);
 
-            for (int i = ROW_START; i <= sheet.getLastRowNum(); i++) {
-                Row row = sheet.getRow(i);
+            for (int i = 1; i <= sheet.getLastRowNum(); i++) {
+                var row = sheet.getRow(i);
+                var price = parsePriceToPositive(row.getCell(PRICE_CELL));
+                var description = row.getCell(DESC_CELL);
 
-                BigDecimal price = parsePriceToPositive(row.getCell(PRICE_CELL));
-                totals.merge("category", price, BigDecimal::add);
+                var category = CATEGORIES.get(description.getStringCellValue().toLowerCase());
+
+                totals.merge(category, price, BigDecimal::add);
             }
         } catch (IOException ex) {
             throw new IllegalStateException("Не удалось прочитать Excel файл.", ex);
