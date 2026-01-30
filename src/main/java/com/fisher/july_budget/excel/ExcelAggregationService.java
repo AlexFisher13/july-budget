@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Row;
@@ -106,7 +107,7 @@ public class ExcelAggregationService {
 
                 for (Row sourceRow : noCategoryRows) {
                     Row targetRow = sheet.createRow(rowIndex++);
-                    copyRowValues(sourceRow, targetRow);
+                    copyRow(sourceRow, targetRow, outWorkbook);
                 }
             }
 
@@ -117,22 +118,44 @@ public class ExcelAggregationService {
         }
     }
 
-    private void copyRowValues(Row sourceRow, Row targetRow) {
-        if (sourceRow == null) {
-            return;
+    private void copyRow(Row srcRow, Row destRow, Workbook destWb) {
+        if (srcRow == null) return;
+
+        destRow.setHeight(srcRow.getHeight());
+
+        for (int i = 0; i < srcRow.getLastCellNum(); i++) {
+            Cell srcCell = srcRow.getCell(i);
+            if (srcCell == null) continue;
+
+            Cell destCell = destRow.createCell(i);
+
+            // 1) копируем значение по типу
+            copyCellValue(srcCell, destCell);
+
+            // 2) копируем стиль
+            copyCellStyle(srcCell, destCell, destWb);
         }
+    }
 
-        DataFormatter formatter = new DataFormatter();
-
-        for (int i = 0; i < sourceRow.getLastCellNum(); i++) {
-            Cell sourceCell = sourceRow.getCell(i);
-            if (sourceCell == null) {
-                continue;
+    private void copyCellValue(Cell srcCell, Cell destCell) {
+        switch (srcCell.getCellType()) {
+            case STRING -> destCell.setCellValue(srcCell.getRichStringCellValue());
+            case NUMERIC -> destCell.setCellValue(srcCell.getNumericCellValue());
+            case BOOLEAN -> destCell.setCellValue(srcCell.getBooleanCellValue());
+            case FORMULA -> destCell.setCellFormula(srcCell.getCellFormula());
+            case BLANK -> destCell.setBlank();
+            default -> {
+                // ERROR / _NONE — на всякий случай
+                destCell.setCellValue(srcCell.toString());
             }
-
-            Cell targetCell = targetRow.createCell(i);
-            String value = formatter.formatCellValue(sourceCell);
-            targetCell.setCellValue(value);
         }
+    }
+
+    private void copyCellStyle(Cell srcCell, Cell destCell, Workbook destWb) {
+        // ВАЖНО: CellStyle нельзя просто взять из другого Workbook и присвоить.
+        // Нужно создать новый стиль в destWb и клонировать в него.
+        CellStyle newStyle = destWb.createCellStyle();
+        newStyle.cloneStyleFrom(srcCell.getCellStyle());
+        destCell.setCellStyle(newStyle);
     }
 }
