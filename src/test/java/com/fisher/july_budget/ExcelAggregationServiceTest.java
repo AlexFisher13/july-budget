@@ -15,7 +15,7 @@ class ExcelAggregationServiceTest {
     private final ExcelAggregationService service = new ExcelAggregationService();
 
     @Test
-    void aggregateByCategory_shouldReturnValidXlsx_whenInputFromResources() throws Exception {
+    void aggregateTest() throws Exception {
         ClassPathResource resource = new ClassPathResource("excel/input.xlsx");
 
         try (InputStream is = resource.getInputStream()) {

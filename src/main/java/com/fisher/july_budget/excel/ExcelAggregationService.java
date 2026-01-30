@@ -7,11 +7,13 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
@@ -42,6 +44,7 @@ public class ExcelAggregationService {
 
     public byte[] aggregateByCategory(InputStream inputStream) {
         Map<String, BigDecimal> totals = new LinkedHashMap<>();
+        List<Row> noCategoryRows = new LinkedList<>();
 
         try (Workbook workbook = WorkbookFactory.create(inputStream)) {
             Sheet sheet = workbook.getSheetAt(0);
@@ -53,13 +56,18 @@ public class ExcelAggregationService {
 
                 var category = CATEGORIES.get(description.getStringCellValue().toLowerCase());
 
+                if (category == null) {
+                    noCategoryRows.add(row);
+                    continue;
+                }
+
                 totals.merge(category, price, BigDecimal::add);
             }
         } catch (IOException ex) {
             throw new IllegalStateException("Не удалось прочитать Excel файл.", ex);
         }
 
-        return buildSummaryWorkbook(totals);
+        return buildSummaryWorkbook(totals, noCategoryRows);
     }
 
 
@@ -71,7 +79,7 @@ public class ExcelAggregationService {
         }
     }
 
-    private byte[] buildSummaryWorkbook(Map<String, BigDecimal> totals) {
+    private byte[] buildSummaryWorkbook(Map<String, BigDecimal> totals, List<Row> noCategoryRows) {
         try (Workbook outWorkbook = new XSSFWorkbook();
              ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
             Sheet sheet = outWorkbook.createSheet("Сводка");
@@ -88,10 +96,43 @@ public class ExcelAggregationService {
             sheet.autoSizeColumn(0);
             sheet.autoSizeColumn(1);
 
+            // ===== Блок "без категории" =====
+            if (!noCategoryRows.isEmpty()) {
+
+                rowIndex++;
+
+                Row noCatHeader = sheet.createRow(rowIndex++);
+                noCatHeader.createCell(0).setCellValue("Операции без категории");
+
+                for (Row sourceRow : noCategoryRows) {
+                    Row targetRow = sheet.createRow(rowIndex++);
+                    copyRowValues(sourceRow, targetRow);
+                }
+            }
+
             outWorkbook.write(outputStream);
             return outputStream.toByteArray();
         } catch (IOException ex) {
             throw new IllegalStateException("Не удалось сформировать Excel файл.", ex);
+        }
+    }
+
+    private void copyRowValues(Row sourceRow, Row targetRow) {
+        if (sourceRow == null) {
+            return;
+        }
+
+        DataFormatter formatter = new DataFormatter();
+
+        for (int i = 0; i < sourceRow.getLastCellNum(); i++) {
+            Cell sourceCell = sourceRow.getCell(i);
+            if (sourceCell == null) {
+                continue;
+            }
+
+            Cell targetCell = targetRow.createCell(i);
+            String value = formatter.formatCellValue(sourceCell);
+            targetCell.setCellValue(value);
         }
     }
 }
