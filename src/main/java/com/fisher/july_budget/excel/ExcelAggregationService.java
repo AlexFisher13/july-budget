@@ -41,6 +41,7 @@ public class ExcelAggregationService {
         put("пятёрочка", "продукты");
         put("вкусвилл", "продукты");
         put("лукойл", "бензин");
+        put("яндекс такси", "такси");
     }};
 
     public byte[] aggregateByCategory(InputStream inputStream) {
@@ -83,7 +84,10 @@ public class ExcelAggregationService {
     private byte[] buildSummaryWorkbook(Map<String, BigDecimal> totals, List<Row> noCategoryRows) {
         try (Workbook outWorkbook = new XSSFWorkbook();
              ByteArrayOutputStream outputStream = new ByteArrayOutputStream()) {
+
             Sheet sheet = outWorkbook.createSheet("Сводка");
+
+            // ===== Сводка =====
             Row header = sheet.createRow(0);
             header.createCell(0).setCellValue("Категория");
             header.createCell(1).setCellValue("Сумма");
@@ -94,20 +98,45 @@ public class ExcelAggregationService {
                 row.createCell(0).setCellValue(entry.getKey());
                 row.createCell(1).setCellValue(entry.getValue().setScale(2, RoundingMode.HALF_UP).doubleValue());
             }
+
+            // Автосайз только для колонок сводки
             sheet.autoSizeColumn(0);
             sheet.autoSizeColumn(1);
 
             // ===== Блок "без категории" =====
             if (!noCategoryRows.isEmpty()) {
-
                 rowIndex++;
 
                 Row noCatHeader = sheet.createRow(rowIndex++);
                 noCatHeader.createCell(0).setCellValue("Операции без категории");
 
+                int noCatStartRowIndex = rowIndex; // первая строка с данными "без категории"
+
                 for (Row sourceRow : noCategoryRows) {
                     Row targetRow = sheet.createRow(rowIndex++);
                     copyRow(sourceRow, targetRow, outWorkbook);
+                }
+
+                // Автосайз ТОЛЬКО по контенту блока "без категории"
+                // (чтобы сводка не влияла на ширину этих колонок)
+                int maxCols = 0;
+                for (int r = noCatStartRowIndex; r < rowIndex; r++) {
+                    Row r0 = sheet.getRow(r);
+                    if (r0 != null && r0.getLastCellNum() > maxCols) {
+                        maxCols = r0.getLastCellNum();
+                    }
+                }
+
+                for (int c = 0; c < maxCols; c++) {
+                    int maxWidth = sheet.getColumnWidth(c); // текущее (после сводки)
+                    sheet.autoSizeColumn(c);
+
+                    int widthByNoCat = sheet.getColumnWidth(c);
+
+                    // откатим "влияние сводки": берём максимум из
+                    // - ширины, которая была до автосайза (сводка)
+                    // - ширины, полученной по "без категории"
+                    sheet.setColumnWidth(c, Math.max(maxWidth, widthByNoCat));
                 }
             }
 
@@ -158,4 +187,21 @@ public class ExcelAggregationService {
         newStyle.cloneStyleFrom(srcCell.getCellStyle());
         destCell.setCellStyle(newStyle);
     }
+
+    private void autoSizeAllColumns(Sheet sheet) {
+        if (sheet.getPhysicalNumberOfRows() == 0) {
+            return;
+        }
+
+        Row firstRow = sheet.getRow(0);
+        if (firstRow == null) {
+            return;
+        }
+
+        int lastCellNum = firstRow.getLastCellNum();
+        for (int i = 0; i < lastCellNum; i++) {
+            sheet.autoSizeColumn(i);
+        }
+    }
+
 }
