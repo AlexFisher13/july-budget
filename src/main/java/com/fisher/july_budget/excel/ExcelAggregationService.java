@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
@@ -23,6 +24,12 @@ public class ExcelAggregationService {
     private static final int ROW_START = 1;
     private static final int PRICE_CELL = 4;
 
+    private static final Map<String, Set<String>> CATEGORIES = Map.of(
+            "Продукты", Set.of("Перекрёсток доставка", "Dostavka Perekrestka_Sdk", "Перекрёсток", "Продуктовый магазин",
+                    "Дикси", "Микс фрукт", "Самокат", "КуулКлевер", "Пятёрочка доставка", "Пятерочка", "ВкусВилл"),
+            "Бензин", Set.of("Лукойл")
+    );
+
     public byte[] aggregateByCategory(InputStream inputStream) {
         Map<String, BigDecimal> totals = new LinkedHashMap<>();
 
@@ -33,9 +40,6 @@ public class ExcelAggregationService {
                 Row row = sheet.getRow(i);
 
                 BigDecimal price = parsePriceToPositive(row.getCell(PRICE_CELL));
-                if (price == null) {
-                    continue;
-                }
                 totals.merge("category", price, BigDecimal::add);
             }
         } catch (IOException ex) {
