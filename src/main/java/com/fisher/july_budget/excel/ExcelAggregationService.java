@@ -42,6 +42,8 @@ public class ExcelAggregationService {
         put("вкусвилл", "продукты");
         put("лукойл", "бензин");
         put("яндекс такси", "такси");
+        put("парковк", "парковки");
+        put("мтс", "связь");
     }};
 
     public byte[] aggregateByCategory(InputStream inputStream) {
@@ -56,7 +58,7 @@ public class ExcelAggregationService {
                 var price = parsePriceToPositive(row.getCell(PRICE_CELL));
                 var description = row.getCell(DESC_CELL);
 
-                var category = CATEGORIES.get(description.getStringCellValue().toLowerCase());
+                var category = resolveCategory(description.getStringCellValue().toLowerCase());
 
                 if (category == null) {
                     noCategoryRows.add(row);
@@ -145,6 +147,32 @@ public class ExcelAggregationService {
         } catch (IOException ex) {
             throw new IllegalStateException("Не удалось сформировать Excel файл.", ex);
         }
+    }
+
+    private String resolveCategory(String description) {
+        if (description == null) {
+            return null;
+        }
+
+        String normalized = description.trim().toLowerCase();
+        if (normalized.isEmpty()) {
+            return null;
+        }
+
+        // 1) точное совпадение
+        String exact = CATEGORIES.get(normalized);
+        if (exact != null) {
+            return exact;
+        }
+
+        // 2) по префиксу (startsWith)
+        for (Map.Entry<String, String> entry : CATEGORIES.entrySet()) {
+            if (normalized.startsWith(entry.getKey())) {
+                return entry.getValue();
+            }
+        }
+
+        return null;
     }
 
     private void copyRow(Row srcRow, Row destRow, Workbook destWb) {
