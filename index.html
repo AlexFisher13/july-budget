@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Бюджет — обработка выписки</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f5f5f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .card {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 16px rgba(0,0,0,0.10);
+            padding: 40px 48px;
+            width: 420px;
+            max-width: 95vw;
+        }
+
+        h1 {
+            font-size: 22px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 32px;
+        }
+
+        .file-label {
+            display: block;
+            border: 2px dashed #d0d0d0;
+            border-radius: 8px;
+            padding: 28px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+            margin-bottom: 20px;
+        }
+
+        .file-label:hover { border-color: #4f8ef7; background: #f0f5ff; }
+        .file-label.has-file { border-color: #4f8ef7; background: #f0f5ff; }
+
+        .file-label input { display: none; }
+
+        .file-icon { font-size: 32px; margin-bottom: 8px; }
+
+        .file-hint {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .file-name {
+            font-size: 14px;
+            color: #4f8ef7;
+            font-weight: 500;
+            margin-top: 6px;
+            word-break: break-all;
+        }
+
+        button {
+            width: 100%;
+            padding: 13px;
+            background: #4f8ef7;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button:hover:not(:disabled) { background: #3a7be0; }
+        button:disabled { background: #a8c4f8; cursor: not-allowed; }
+
+        .status {
+            margin-top: 16px;
+            font-size: 14px;
+            text-align: center;
+            min-height: 20px;
+        }
+
+        .status.error { color: #e53e3e; }
+        .status.success { color: #38a169; }
+        .status.info { color: #888; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1>Обработка выписки</h1>
+    <p class="subtitle">Загрузите Excel-файл банковской выписки</p>
+
+    <label class="file-label" id="fileLabel">
+        <input type="file" id="fileInput" accept=".xlsx,.xls">
+        <div class="file-icon">📂</div>
+        <div class="file-hint">Нажмите или перетащите файл</div>
+        <div class="file-name" id="fileName"></div>
+    </label>
+
+    <button id="processBtn" disabled>Обработать</button>
+    <div class="status info" id="status"></div>
+</div>
+
+<script>
+    const PRICE_COL = 4;
+    const DESC_COL  = 11;
+
+    const CATEGORIES = {
+        'перекрёсток доставка':     'продукты',
+        'dostavka perekrestka_sdk': 'продукты',
+        'перекрёсток':              'продукты',
+        'продуктовый магазин':      'продукты',
+        'дикси':                    'продукты',
+        'микс фрукт':               'продукты',
+        'самокат':                  'продукты',
+        'куулклевер':               'продукты',
+        'пятёрочка доставка':       'продукты',
+        'пятёрочка':                'продукты',
+        'вкусвилл':                 'продукты',
+        'лукойл':                   'бензин',
+        'яндекс такси':             'такси',
+        'парковк':                  'парковки',
+        'мтс':                      'связь',
+    };
+
+    function resolveCategory(description) {
+        if (!description) return null;
+        const norm = String(description).trim().toLowerCase();
+        if (!norm) return null;
+        if (CATEGORIES[norm]) return CATEGORIES[norm];
+        for (const [key, value] of Object.entries(CATEGORIES)) {
+            if (norm.startsWith(key)) return value;
+        }
+        return null;
+    }
+
+    function colWidth(values) {
+        let max = 0;
+        for (const v of values) {
+            const len = v == null ? 0 : String(v).length;
+            if (len > max) max = len;
+        }
+        return Math.max(max + 2, 8);
+    }
+
+    function processWorkbook(wb) {
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
+
+        const totals = new Map();
+        const noCatRows = [];
+
+        for (let i = 1; i < aoa.length; i++) {
+            const row = aoa[i];
+            if (!row || row.length === 0) continue;
+
+            const priceRaw = row[PRICE_COL];
+            const descRaw  = row[DESC_COL];
+
+            if (priceRaw == null) continue;
+            const price = Math.abs(Number(priceRaw));
+            if (isNaN(price)) continue;
+
+            const category = resolveCategory(descRaw);
+
+            if (category === null) {
+                noCatRows.push(row);
+            } else {
+                totals.set(category, (totals.get(category) || 0) + price);
+            }
+        }
+
+        return { totals, noCatRows };
+    }
+
+    function buildSummary(totals, noCatRows) {
+        const outWb = XLSX.utils.book_new();
+        const outData = [];
+
+        // Заголовок сводки
+        outData.push(['Категория', 'Сумма']);
+
+        // Строки по категориям
+        for (const [cat, sum] of totals) {
+            outData.push([cat, Math.round(sum * 100) / 100]);
+        }
+
+        // Блок "без категории"
+        if (noCatRows.length > 0) {
+            outData.push([]);
+            outData.push(['Операции без категории']);
+            for (const row of noCatRows) {
+                outData.push(row);
+            }
+        }
+
+        const ws = XLSX.utils.aoa_to_sheet(outData);
+
+        // Автоширина по содержимому
+        const colCount = outData.reduce((max, r) => Math.max(max, r ? r.length : 0), 0);
+        const colWidths = [];
+        for (let c = 0; c < colCount; c++) {
+            const vals = outData.map(r => (r && r[c] != null ? r[c] : ''));
+            colWidths.push({ wch: colWidth(vals) });
+        }
+        ws['!cols'] = colWidths;
+
+        XLSX.utils.book_append_sheet(outWb, ws, 'Сводка');
+        return outWb;
+    }
+
+    // ─── UI ───────────────────────────────────────────────────────────────────
+
+    const fileInput  = document.getElementById('fileInput');
+    const fileLabel  = document.getElementById('fileLabel');
+    const fileNameEl = document.getElementById('fileName');
+    const processBtn = document.getElementById('processBtn');
+    const statusEl   = document.getElementById('status');
+
+    let selectedFile = null;
+
+    fileInput.addEventListener('change', () => {
+        selectedFile = fileInput.files[0] || null;
+        if (selectedFile) {
+            fileNameEl.textContent = selectedFile.name;
+            fileLabel.classList.add('has-file');
+            processBtn.disabled = false;
+            setStatus('', '');
+        } else {
+            fileNameEl.textContent = '';
+            fileLabel.classList.remove('has-file');
+            processBtn.disabled = true;
+        }
+    });
+
+    processBtn.addEventListener('click', async () => {
+        if (!selectedFile) return;
+
+        processBtn.disabled = true;
+        processBtn.textContent = 'Обработка...';
+        setStatus('Читаем файл...', 'info');
+
+        try {
+            const buffer = await selectedFile.arrayBuffer();
+            const wb = XLSX.read(buffer, { type: 'array' });
+
+            if (!wb.SheetNames.length) throw new Error('Файл не содержит листов.');
+
+            setStatus('Категоризация...', 'info');
+            const { totals, noCatRows } = processWorkbook(wb);
+
+            if (totals.size === 0 && noCatRows.length === 0) {
+                throw new Error('Не найдено ни одной строки с данными.');
+            }
+
+            setStatus('Формируем summary.xlsx...', 'info');
+            const outWb = buildSummary(totals, noCatRows);
+
+            XLSX.writeFile(outWb, 'summary.xlsx');
+
+            const cats = totals.size;
+            const uncats = noCatRows.length;
+            setStatus(`Готово: ${cats} катег., ${uncats} без категории`, 'success');
+        } catch (e) {
+            setStatus('Ошибка: ' + (e.message || e), 'error');
+        } finally {
+            processBtn.disabled = false;
+            processBtn.textContent = 'Обработать';
+        }
+    });
+
+    function setStatus(msg, type) {
+        statusEl.textContent = msg;
+        statusEl.className = 'status ' + type;
+    }
+</script>
+</body>
+</html>
